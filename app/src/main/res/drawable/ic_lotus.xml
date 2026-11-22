@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icon option 4 "Lotus" (own drawing, design/icons/option4.svg), chosen by Marko 17.11.2026 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="54" android:translateY="74">
+        <group android:rotation="-62"><path android:fillColor="#B8894A" android:pathData="M0,0 C-11,-15.30 -6.05,-30.60 0,-34 C6.05,-30.60 11,-15.30 0,0 Z"/></group>
+        <group android:rotation="62"><path android:fillColor="#B8894A" android:pathData="M0,0 C-11,-15.30 -6.05,-30.60 0,-34 C6.05,-30.60 11,-15.30 0,0 Z"/></group>
+        <group android:rotation="-32"><path android:fillColor="#D9AE6A" android:pathData="M0,0 C-12,-18.00 -6.60,-36.00 0,-40 C6.60,-36.00 12,-18.00 0,0 Z"/></group>
+        <group android:rotation="32"><path android:fillColor="#D9AE6A" android:pathData="M0,0 C-12,-18.00 -6.60,-36.00 0,-40 C6.60,-36.00 12,-18.00 0,0 Z"/></group>
+        <group android:rotation="0"><path android:fillColor="#F0D9A8" android:pathData="M0,0 C-13,-20.70 -7.15,-41.40 0,-46 C7.15,-41.40 13,-20.70 0,0 Z"/></group>
+    </group>
+    <path android:strokeColor="#D9AE6A" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M30,82 H78"/>
+</vector>

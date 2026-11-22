@@ -1,0 +1,52 @@
+plugins { id 'com.android.application' }
+
+// One version number for the game on the web and in the app: the workflow passes -PappVersion=N
+def appVersion = (project.findProperty('appVersion') ?: '13').toInteger()
+def keystore = System.getenv('MG_KEYSTORE')
+
+android {
+    namespace 'app.mindgarden'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'app.mindgarden'      // the same as v1..v12: a new version installs over the old one
+        minSdk 26
+        targetSdk 35
+        versionCode appVersion
+        versionName "v${appVersion}"
+        buildConfigField 'String', 'SITE', '"https://mindgarden.markobosko.org"'
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        // The v11/v12 certificate (the standard Android debug key of kognius_app, kept as the secret MG_KEYSTORE_B64),
+        // so the app installs over v12 and every phone keeps its players and progress. Never another key here.
+        shared {
+            if (keystore) storeFile file(keystore)
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystore) signingConfig signingConfigs.shared
+        }
+        debug { if (keystore) signingConfig signingConfigs.shared }
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    androidResources {
+        // keep every file of the game (the default rule would drop names starting with "." or "_")
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

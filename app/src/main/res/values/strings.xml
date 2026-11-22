@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Mind Garden</string>
+    <string name="app_description">Puzzles, memory games and language games for the whole family, in six languages. Works without internet.</string>
+    <string name="no_browser">No web browser on this phone to open the page.</string>
+</resources>

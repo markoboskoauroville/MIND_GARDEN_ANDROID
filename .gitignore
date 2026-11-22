@@ -1,0 +1,13 @@
+# The game is fetched from the web repo at build time and never committed here.
+app/src/main/assets/
+build/
+app/build/
+.gradle/
+local.properties
+*.keystore
+*.jks
+*.apk
+*.key
+out/
+enc/
+__pycache__/
