@@ -22,7 +22,7 @@ RULES = [
     ("the phone's voice for 'Welcome, name' (MGTts)", '"MGTts"' in main and 'TextToSpeech' in tts),
     ('TTS engine visible on Android 11+', 'android.intent.action.TTS_SERVICE' in man),
     ('sound plays without a tap first', 'setMediaPlaybackRequiresUserGesture(false)' in main),
-    ('the on-device test runner can read the page (WebView debugging, as v12)', 'setWebContentsDebuggingEnabled(true)' in main),
+    ('the on-device test runner can read the page in the debug variant, never in the release', 'setWebContentsDebuggingEnabled((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)' in main),
     ('portrait', 'android:screenOrientation="portrait"' in man),
     ('the screen stays on while playing', 'FLAG_KEEP_SCREEN_ON' in main),
     # the new rules
@@ -32,6 +32,7 @@ RULES = [
     ('no REQUEST_INSTALL_PACKAGES (the app never installs anything)', 'REQUEST_INSTALL_PACKAGES' not in man and 'PackageInstaller' not in main),
     ('only the INTERNET permission', re.findall(r'uses-permission android:name="([^"]+)"', man) == ['android.permission.INTERNET']),
     ('targetSdk 35', 'targetSdk 35' in gradle),
+    ('without internet the web tile says so plainly (no dead button)', 'needsInternet' in src('app/src/main/java/app/mindgarden/AppBridge.java')),
     ('margins: bars + cutout + 16 dp on four sides', 'WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()' in main and '16 *' in main),
     ('no keystore path or other key in the build file', 'keystore/' not in gradle and 'MG_KEYSTORE' in gradle),
 ]

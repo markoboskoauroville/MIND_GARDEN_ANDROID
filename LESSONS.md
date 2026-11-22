@@ -14,3 +14,13 @@
 - **22.11.2026. Play Protect** warns about apps not from the Play Store and dislikes `REQUEST_INSTALL_PACKAGES`. Removing that
   permission, targetSdk 35, a stable certificate and a description make a block less likely; nothing outside the Play
   Store removes the "unknown app" warning.
+- **22.11.2026. An emulator without `-no-audio` plays on Marko's speakers.** A chime (Play Protect's dialog on the headless
+  emulator) disturbed him while he listened to music. Every emulator is started with `-no-audio`; sound is proven from the
+  player's state, never by playing it into his room.
+- **22.11.2026. `navigator.onLine` says true inside a WebView in airplane mode** (measured on API 35). The "needs internet" line
+  is decided natively (a 3 s connection to the site's port 443).
+- **22.11.2026. Another worker attached to this app's WebView through DevTools** and forced a navigation to its preview site;
+  the request filter refused it. Since v14 the release is not debuggable at all; only the debug variant is, for tests.
+- **22.11.2026. The site uses the key as text and the timestamp in milliseconds.** The first draft of the upload used the
+  hex-decoded bytes and seconds: it would have been refused. A word-for-word copy of the web's signing function is now one
+  of the stand-in checks, so the two sides cannot drift apart silently.

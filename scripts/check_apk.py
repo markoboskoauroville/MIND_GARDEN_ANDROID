@@ -30,6 +30,8 @@ if f"name='app.mindgarden' versionCode='{version}' versionName='v{version}'" not
     errors.append('package/version line wrong: ' + badging.splitlines()[0])
 if "targetSdkVersion:'35'" not in badging:
     errors.append('targetSdk is not 35')
+if 'application-debuggable' in badging:
+    errors.append('the release is debuggable: nothing on a player\'s computer may attach to it')
 perms = sorted(set(re.findall(r"uses-permission: name='([^']+)'", badging)))
 if perms != ['android.permission.INTERNET']:
     errors.append(f'permissions {perms}: only INTERNET is allowed')

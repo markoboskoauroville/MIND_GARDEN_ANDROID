@@ -7,7 +7,7 @@ No README on purpose (MANTRA_MANIFEST repo-privacy.md: a public repository that 
 
 Started 22.11.2026 (Opus worker of the Fable master session). Marko's words: `momentaryupdates.md`.
 
-## The design in nine lines
+## The design in ten lines
 
 1. **One source.** The workflow fetches the web repo at the exact commit in `web.lock`, copies its `public/` into
    `app/src/main/assets/www` untouched and writes only one file of its own, `www/mode.js` (MG_MODE "app": login false,
@@ -32,7 +32,11 @@ Started 22.11.2026 (Opus worker of the Fable master session). Marko's words: `mo
 8. **Only the game loads.** The WebView refuses every request that is not `file:///android_asset/www/...` (so the web's
    remote speechify-keys script, `/api/...` calls and `/favicon.svg` never run or load in the app). Links to the site
    open in the browser; nothing else opens.
-9. **Margins and portrait.** System bars + camera cutout + 16 dp on all four sides; portrait only; targetSdk 35.
+9. **Not debuggable.** The release's WebView cannot be attached from a computer (WebView debugging only when the build is
+   debuggable; `check_apk.py` fails a debuggable release). Proven 22.11.2026: a navigation forced from outside through
+   DevTools (another worker's test) to an https address loaded nothing inside the app ("Webpage not available",
+   ERR_HTTP_RESPONSE_CODE_FAILURE): the request filter holds even then.
+10. **Margins and portrait.** System bars + camera cutout + 16 dp on all four sides; portrait only; targetSdk 35.
 
 ## The secrets (names and purpose, never the values)
 
@@ -62,15 +66,17 @@ writes the players and progress to a file, and an import in the new app).
    that file without rebuilding.
 5. Phones with the app see the question at their next start (online). A phone on v12 does not (see below).
 
-## The upload rule (the same text is in `scripts/upload_apk.py` and in the web repo)
+## The upload rule (the site's lib/app.js and tools/app_sign.py; `scripts/upload_apk.py` sends the same bytes)
 
 `POST /app/upload/<version>/<index>` (chunks of at most 1,048,576 bytes, index from 0) and `POST /app/upload/<version>/finish`
-(the app.json fields + `"chunks"`). Headers `X-MG-Time` (unix seconds) and `X-MG-Sig` = hex HMAC-SHA256 with the 32 bytes of
-`APP_UPLOAD_KEY` over `"POST\n" + path + "\n" + time + "\n" + sha256hex(body)`. The site refuses: more than 300 s away or a
-bad signature (401), a version not higher than the served one (409), a chunk too big (413), a finish that does not match
-(422). Known answer: key bytes 0x00..0x1f, path `/app/upload/13/0`, time 1763800000, body `hello` →
-`2d8f29ad8f117b5a524705c79b42bbf602ef505397931a5cc250d0cba38443e6`. `scripts/test_upload.py` checks all of it against a
-local stand-in in every run.
+with exactly `{"chunks","size","sha256","date","web_commit"}`. Headers `X-MG-Timestamp` (milliseconds since 1970) and
+`X-MG-Signature` = hex HMAC-SHA256 with the key TEXT `APP_UPLOAD_KEY` (64 hex characters, used as UTF-8 text, not decoded)
+over `"POST\n" + path + "\n" + timestamp + "\n" + sha256hex(body)`, and a real `User-Agent` (Cloudflare refuses
+python-urllib's default). The site refuses an old timestamp (5 min) or a bad signature, a version not higher than the live
+one (409), a chunk too big (413), a finish that does not match (422), and answers 503 while its key is not set. Known
+answer: key text `0123456789abcdef` four times, path `/app/upload/14/0`, timestamp `1763800000000`, body `hello` →
+`29d7eb2262d95603dc5746da664b18b46e5637da130f267d74982f2ec33e247f` (openssl). `scripts/test_upload.py` checks all of it,
+and a word-for-word copy of the web's `signed_post`, against a local stand-in in every run.
 
 ## The files repo (store of record)
 
@@ -80,7 +86,11 @@ are removed with a history rewrite **only when Marko asks**, never automatically
 
 | Version | Web commit | APK size | Date |
 |---|---|---|---|
-| 13 | 674df7a | (filled after the first green run) | 22.11.2026 |
+| 13 | 674df7a | 33,977,969 bytes | 22.11.2026 (test build: debuggable WebView, never uploaded to the site) |
+| 14 | d24f948 | (see the run summary) | 22.11.2026 |
+
+`test/mindgarden-v<N>-debug.apk` beside each release: the debug variant (same code, same certificate, WebView debuggable)
+for the on-device test runner and the emulator proofs. It is never uploaded to the site and never given to anybody.
 
 ## What is in the app, what is not, and why
 
@@ -99,8 +109,27 @@ publish it). v12 phones learn of v13 from Marko, or from one last notice-only v1
 
 Same app id; same page address (progress survives); native back button through `window.appBack`; native confirm and alert
 (the v12 confirm() fix); MGTts, the phone's voice; recorded clips offline; players and per-player progress (web source,
-parity `players`); the on-device test runner (WebView debugging on, as in v12); portrait; screen kept on. Dropped by
+parity `players`); the on-device test runner (with the debug variant, test/mindgarden-v<N>-debug.apk; the release is no longer debuggable); portrait; screen kept on. Dropped by
 design: the self-installing updater (replaced by "open the download page"), the remote speechify-keys script (blocked).
+
+## Testing on the emulator (the rules learned on 22.11.2026)
+
+- Start it **always with `-no-audio`** (`emulator -avd Pixel_7_API_35 -port <own port> -no-window -no-audio`): an emulator
+  without it plays on Marko's speakers; on 22.11.2026 a chime (Play Protect's dialog) disturbed him while he listened to music.
+  Sound is proven from the player's state (the audio element's currentTime advancing to its duration, audio focus held by
+  app.mindgarden in `dumpsys audio`), never by raising a volume.
+- Use your own port and pass `-s <serial>` to every adb command; DevTools pages are picked by package. Never attach to
+  another job's emulator or WebView.
+- Proofs need the debug variant (`test/mindgarden-v<N>-debug.apk`) for DevTools; the release is checked by screenshots,
+  uiautomator and `dumpsys`.
+
+## Play Protect (what was seen, 22.11.2026, emulator Pixel_7_API_35 with Google Play)
+
+v12 (`mindgarden-share-v12.apk`, targetSdk 34, REQUEST_INSTALL_PACKAGES) was blocked on a fresh install: "Google Play Protect.
+Harmful app blocked. This app may be harmful." with "Install anyway" hidden under More details, the same as on Emina's phone.
+v13 (targetSdk 35, INTERNET only) installed over v12 with no dialog. That is one emulator at one moment, not a promise for a
+real phone: Play Protect's verdicts come from Google's servers and can change. Nothing outside the Play Store removes the
+warning for sure.
 
 ## Next
 

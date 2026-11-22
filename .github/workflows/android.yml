@@ -127,7 +127,16 @@ jobs:
 
       - name: Unit tests and the signed APK
         if: env.STORED == '0'
-        run: gradle --no-daemon -q :app:testReleaseUnitTest :app:assembleRelease -PappVersion="$APP_VERSION"
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -q :app:testReleaseUnitTest :app:assembleRelease :app:assembleDebug -PappVersion="$APP_VERSION"
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          t = f = 0
+          for x in glob.glob('app/build/test-results/testReleaseUnitTest/*.xml'):
+              r = ET.parse(x).getroot(); t += int(r.get('tests')); f += int(r.get('failures')) + int(r.get('errors'))
+          print(f'unit tests: {t - f} of {t} pass'); assert t > 0 and f == 0, 'no unit tests ran or some failed'
+          PY
 
       - name: Check the built APK (certificate, version, permissions, assets hash against the web commit)
         run: |
@@ -136,6 +145,10 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           if [ "$STORED" = "0" ]; then
             mkdir -p out; cp app/build/outputs/apk/release/app-release.apk "out/mindgarden-v$APP_VERSION.apk"
+            cp app/build/outputs/apk/debug/app-debug.apk "out/mindgarden-v$APP_VERSION-debug.apk"
+            D=$("$BT/aapt2" dump badging "out/mindgarden-v$APP_VERSION-debug.apk")
+            echo "$D" | grep -q application-debuggable || { echo "::error::the debug variant is not debuggable"; exit 1; }
+            "$BT/apksigner" verify --print-certs "out/mindgarden-v$APP_VERSION-debug.apk" | grep -q "digest: $CERT_SHA256" || { echo "::error::debug variant certificate"; exit 1; }
             python3 scripts/app_json.py "out/mindgarden-v$APP_VERSION.apk" "$APP_VERSION" "$WEB_COMMIT" > out/app.json
           fi
           python3 scripts/check_apk.py "out/mindgarden-v$APP_VERSION.apk" "$BT" "$APP_VERSION" "$CERT_SHA256" "$WEB_GIT" "$WEB_COMMIT"
@@ -156,6 +169,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/out/mindgarden-v$APP_VERSION.apk" "apk/mindgarden-v$APP_VERSION.apk"
           cp "$GITHUB_WORKSPACE/out/app.json" "apk/mindgarden-v$APP_VERSION.json"
           cp "$GITHUB_WORKSPACE/out/app.json" app.json
+          mkdir -p test; cp "$GITHUB_WORKSPACE/out/mindgarden-v$APP_VERSION-debug.apk" "test/mindgarden-v$APP_VERSION-debug.apk"   # tests only, never uploaded
           git -c user.name="Mind Garden CI" -c user.email="213746898+markoboskoauroville@users.noreply.github.com" add -A
           git -c user.name="Mind Garden CI" -c user.email="213746898+markoboskoauroville@users.noreply.github.com" \
             commit -q -m "v$APP_VERSION: app built from web commit $WEB_COMMIT (shell $GITHUB_SHA)"

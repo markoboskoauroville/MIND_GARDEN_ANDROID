@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
@@ -41,7 +42,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        WebView.setWebContentsDebuggingEnabled(true); // as v12: the on-device test runner reads the page over adb
+        // Only the debug variant can be read over adb (the on-device test runner, the emulator proofs). The release that
+        // reaches players is never debuggable: nothing on a player's computer can attach to the game.
+        WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -84,7 +87,7 @@ public class MainActivity extends Activity {
         tts = new Tts(this);
         web.addJavascriptInterface(tts, "MGTts");
         web.addJavascriptInterface(new VersionCheck(this, web, getIntent().getStringExtra("version_url")), "MGUpdate");
-        web.addJavascriptInterface(new AppBridge(this), "MGApp");
+        web.addJavascriptInterface(new AppBridge(this, web), "MGApp");
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(0xFF0E0E11);

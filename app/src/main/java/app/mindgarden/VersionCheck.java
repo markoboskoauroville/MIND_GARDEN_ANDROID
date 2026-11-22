@@ -65,7 +65,7 @@ public class VersionCheck {
 
     @JavascriptInterface public void install() {
         act.runOnUiThread(() -> {
-            MainActivity.openInBrowser(act, BuildConfig.SITE + "/app");
+            AppBridge.openOnline(act, web, BuildConfig.SITE + "/app");
             web.evaluateJavascript("(function(){var d=document.getElementById('updAsk');if(d)d.remove();})()", null);
         });
     }
