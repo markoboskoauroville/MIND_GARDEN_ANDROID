@@ -1,0 +1,189 @@
+# Mind Garden (Android): the offline app, built from the game of the private web repo at the commit in web.lock.
+# Based on MANTRA_MANIFEST/workflows/android-gradle.yml, changed for one reason: the APK is for registered people only
+# (Marko, 22.11.2026), so it is NEVER a release and never a plain artifact of this public repository.
+#   1. fetch MIND_GARDEN_WEB at web.lock with a read-only deploy key (secret WEB_DEPLOY_KEY)
+#   2. copy its public/ into assets/www, write the app's mode.js, record the web commit and the hash of assets/www
+#   3. version (web VERSION file, else appVersion here), parity with the web's tests/parity.json, the shell's own rules
+#   4. unit tests and the signed APK (secret MG_KEYSTORE_B64: the same certificate as v11 and v12)
+#   5. the built APK is checked: certificate, version, permissions, and its assets/www hash against the web commit
+#   6. (a) the APK and app.json are kept in the private files repo (write deploy key FILES_DEPLOY_KEY, that repo only)
+#      (b) the HMAC upload, first tested against a local stand-in, sends it to the site's private store (APP_UPLOAD_KEY;
+#          only when the repository variable UPLOAD_LIVE is 1) (c) the site's public /app/version.json must then say N
+#   A version already kept in the files repo from the same web commit is not rebuilt: a re-run uploads the kept file.
+# Secrets are used only on pushes to main of this repository: there is no pull_request trigger and no input.
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'markoboskoauroville/MIND_GARDEN_ANDROID' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CERT_SHA256: 1ee112513eccf352d9419a251c898ef04714257cb18f00a1336e118d3e5a624a   # v11/v12 certificate (public, not a secret)
+      SITE: https://mindgarden.markobosko.org
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Shell rules (no downgrades, no secrets, no game content in this repo)
+        run: python3 scripts/check_rules.py
+
+      - name: Fetch the game from the web repo at web.lock
+        env:
+          WEB_KEY: ${{ secrets.WEB_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          COMMIT=$(tr -d '[:space:]' < web.lock)
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::web.lock must hold a full 40-character commit"; exit 1; }
+          [ -n "$WEB_KEY" ] || { echo "::error::secret WEB_DEPLOY_KEY is missing"; exit 1; }
+          K="$RUNNER_TEMP/webkey"; umask 077; printf '%s\n' "$WEB_KEY" > "$K"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$RUNNER_TEMP/known"
+          export GIT_SSH_COMMAND="ssh -i $K -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known"
+          git init -q "$RUNNER_TEMP/web"
+          git -C "$RUNNER_TEMP/web" remote add origin git@github.com:markoboskoauroville/MIND_GARDEN_WEB.git
+          git -C "$RUNNER_TEMP/web" fetch -q --depth 1 origin "$COMMIT"
+          rm -f "$K"
+          echo "WEB_GIT=$RUNNER_TEMP/web" >> "$GITHUB_ENV"
+          echo "WEB_COMMIT=$COMMIT" >> "$GITHUB_ENV"
+
+      - name: Version (one number for web and app)
+        run: |
+          set -euo pipefail
+          FLOOR=$(grep '^appVersion=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          if git -C "$WEB_GIT" cat-file -e "$WEB_COMMIT:VERSION" 2>/dev/null; then
+            N=$(git -C "$WEB_GIT" show "$WEB_COMMIT:VERSION" | tr -d '[:space:]'); FROM="the web repo's VERSION"
+          else
+            N="$FLOOR"; FROM="gradle.properties (the web commit has no VERSION file)"
+          fi
+          [[ "$N" =~ ^[0-9]+$ ]] || { echo "::error::version '$N' is not a whole number"; exit 1; }
+          [ "$N" -gt 12 ] || { echo "::error::version $N is not higher than v12 (versionCode 12): it would not install over it"; exit 1; }
+          [ "$N" -ge "$FLOOR" ] || { echo "::error::version $N is lower than the floor $FLOOR in gradle.properties (never backwards)"; exit 1; }
+          echo "APP_VERSION=$N" >> "$GITHUB_ENV"
+          echo "Version $N (from $FROM), web commit $WEB_COMMIT"
+
+      - name: The files repo (is this version already kept?)
+        env:
+          FILES_KEY: ${{ secrets.FILES_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$FILES_KEY" ] || { echo "::error::secret FILES_DEPLOY_KEY is missing"; exit 1; }
+          K="$RUNNER_TEMP/fileskey"; umask 077; printf '%s\n' "$FILES_KEY" > "$K"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$RUNNER_TEMP/known"
+          echo "FILES_SSH=ssh -i $K -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known" >> "$GITHUB_ENV"
+          GIT_SSH_COMMAND="ssh -i $K -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known" \
+            git clone -q --depth 1 git@github.com:markoboskoauroville/MIND_GARDEN_FILES.git "$RUNNER_TEMP/files"
+          F="$RUNNER_TEMP/files"; A="apk/mindgarden-v$APP_VERSION.apk"; J="apk/mindgarden-v$APP_VERSION.json"
+          echo "FILES=$F" >> "$GITHUB_ENV"
+          if [ -f "$F/$A" ]; then
+            KEPT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['web_commit'])" "$F/$J")
+            [ "$KEPT" = "$WEB_COMMIT" ] || { echo "::error::v$APP_VERSION is already kept from web commit $KEPT; this build is from $WEB_COMMIT. Raise the version, never replace a released file."; exit 1; }
+            mkdir -p out; cp "$F/$A" "out/mindgarden-v$APP_VERSION.apk"; cp "$F/$J" out/app.json
+            echo "STORED=1" >> "$GITHUB_ENV"
+            echo "::notice::v$APP_VERSION is already kept in the files repo from this web commit: not rebuilt, the kept file is uploaded"
+          else
+            echo "STORED=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Copy the game into assets/www and write the app's mode.js
+        if: env.STORED == '0'
+        run: scripts/sync_web.sh "$WEB_GIT" "$WEB_COMMIT"
+
+      - name: Parity with the web (tests/parity.json at the web commit)
+        if: env.STORED == '0'
+        run: python3 scripts/check_parity.py "$WEB_GIT" "$WEB_COMMIT" app/src/main/assets/www
+
+      - name: Upload signing and the HMAC rule, tested against a local stand-in of the site's route
+        run: python3 scripts/test_upload.py
+
+      - name: Signing key (the v11/v12 certificate)
+        if: env.STORED == '0'
+        env:
+          KEYSTORE_B64: ${{ secrets.MG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::secret MG_KEYSTORE_B64 is missing: a build with another key would not install over v12"; exit 1; }
+          umask 077; printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mg.keystore"
+          echo "MG_KEYSTORE=$RUNNER_TEMP/mg.keystore" >> "$GITHUB_ENV"
+
+      - name: Unit tests and the signed APK
+        if: env.STORED == '0'
+        run: gradle --no-daemon -q :app:testReleaseUnitTest :app:assembleRelease -PappVersion="$APP_VERSION"
+
+      - name: Check the built APK (certificate, version, permissions, assets hash against the web commit)
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/mg.keystore"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          if [ "$STORED" = "0" ]; then
+            mkdir -p out; cp app/build/outputs/apk/release/app-release.apk "out/mindgarden-v$APP_VERSION.apk"
+            python3 scripts/app_json.py "out/mindgarden-v$APP_VERSION.apk" "$APP_VERSION" "$WEB_COMMIT" > out/app.json
+          fi
+          python3 scripts/check_apk.py "out/mindgarden-v$APP_VERSION.apk" "$BT" "$APP_VERSION" "$CERT_SHA256" "$WEB_GIT" "$WEB_COMMIT"
+          python3 -c "import json,hashlib,sys; m=json.load(open('out/app.json')); d=open(sys.argv[1],'rb').read(); assert m['size']==len(d) and m['sha256']==hashlib.sha256(d).hexdigest() and m['version']==int(sys.argv[2]) and m['web_commit']==sys.argv[3], 'app.json does not describe the APK'" "out/mindgarden-v$APP_VERSION.apk" "$APP_VERSION" "$WEB_COMMIT"
+          {
+            echo "### Mind Garden v$APP_VERSION (app)"
+            echo "- web commit: \`$WEB_COMMIT\`"
+            echo "- size: $(stat -c %s "out/mindgarden-v$APP_VERSION.apk") bytes"
+            echo "- sha256: \`$(sha256sum "out/mindgarden-v$APP_VERSION.apk" | cut -d' ' -f1)\`"
+            echo "- kept before this run: $STORED"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: (a) Keep the APK and app.json in the files repo
+        if: env.STORED == '0'
+        run: |
+          set -euo pipefail
+          cd "$FILES"; mkdir -p apk
+          cp "$GITHUB_WORKSPACE/out/mindgarden-v$APP_VERSION.apk" "apk/mindgarden-v$APP_VERSION.apk"
+          cp "$GITHUB_WORKSPACE/out/app.json" "apk/mindgarden-v$APP_VERSION.json"
+          cp "$GITHUB_WORKSPACE/out/app.json" app.json
+          git -c user.name="Mind Garden CI" -c user.email="213746898+markoboskoauroville@users.noreply.github.com" add -A
+          git -c user.name="Mind Garden CI" -c user.email="213746898+markoboskoauroville@users.noreply.github.com" \
+            commit -q -m "v$APP_VERSION: app built from web commit $WEB_COMMIT (shell $GITHUB_SHA)"
+          GIT_SSH_COMMAND="$FILES_SSH" git push -q origin HEAD:main
+          echo "kept: apk/mindgarden-v$APP_VERSION.apk in the files repo"
+
+      - name: (b) Upload to the site's private store (registered people only)
+        if: vars.UPLOAD_LIVE == '1'
+        env:
+          APP_UPLOAD_KEY: ${{ secrets.APP_UPLOAD_KEY }}
+        run: python3 scripts/upload_apk.py "$SITE" "out/mindgarden-v$APP_VERSION.apk" out/app.json
+
+      - name: (c) The site's public version number now says the new one
+        if: vars.UPLOAD_LIVE == '1'
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            V=$(curl -fsS -H 'Cache-Control: no-cache' "$SITE/app/version.json?ci=$GITHUB_RUN_ID-$i" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version'))" || true)
+            [ "$V" = "$APP_VERSION" ] && { echo "the site serves v$V"; exit 0; }
+            sleep 10
+          done
+          echo "::error::the APK is kept in the files repo but the site says v$V, not v$APP_VERSION: re-run this workflow (it uploads the kept file, no rebuild)"; exit 1
+
+      - name: Not uploaded yet
+        if: vars.UPLOAD_LIVE != '1'
+        run: |
+          echo "::warning::UPLOAD_LIVE is not 1: v$APP_VERSION is kept in the files repo only; the site does not offer it yet"
+
+      - name: Clean the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/webkey" "$RUNNER_TEMP/fileskey" "$RUNNER_TEMP/mg.keystore" out
