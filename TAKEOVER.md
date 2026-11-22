@@ -47,6 +47,20 @@ Started 22.11.2026 (Opus worker of the Fable master session). Marko's words: `mo
 | `MG_KEYSTORE_B64` | base64 of `keystore/mindgarden.keystore` of kognius_app (the v11/v12 certificate) | sign the APK |
 | `APP_UPLOAD_KEY` | 64 hex characters, the shared HMAC key; the same value is a Pages secret of the site | upload an APK chunk and finish; reads nothing |
 
+Two deploy keys, each for one repository with the least right: `MIND_GARDEN_ANDROID CI (read only)` on MIND_GARDEN_WEB and
+`MIND_GARDEN_ANDROID CI (write)` on MIND_GARDEN_FILES (`gh repo deploy-key list -R <repo>` shows them).
+
+**When a key must be replaced** (leaked, lost, or a worker in doubt): never print or file it; each in one command block in a
+private temp folder deleted at the end.
+- A deploy key: `ssh-keygen -t ed25519 -N "" -f $D/k`; `gh repo deploy-key add $D/k.pub -R markoboskoauroville/<repo> -t "<same title>"`
+  (`--allow-write` only for the files repo); `gh secret set <WEB|FILES>_DEPLOY_KEY -R markoboskoauroville/MIND_GARDEN_ANDROID < $D/k`;
+  then delete the old key (`gh repo deploy-key delete <id> -R <repo>`); push or re-run to prove it.
+- `APP_UPLOAD_KEY`: make 64 random hex characters into a file (mode 600, no newline), set it here with
+  `gh secret set APP_UPLOAD_KEY ... < file` and give the same file to the web side for the Pages secret
+  (`wrangler pages secret put APP_UPLOAD_KEY`), which deletes it. Until both sides have it, uploads are refused (401), nothing breaks.
+- `MG_KEYSTORE_B64`: only from the same keystore (kognius_app `keystore/mindgarden.keystore`): `base64 -i <keystore> | tr -d '\n' |
+  gh secret set MG_KEYSTORE_B64 ...`. A different keystore would make every phone uninstall and lose progress: Marko's decision only.
+
 Repository variable `UPLOAD_LIVE` = `1` turns the site upload on (the route must exist). Only pushes to main of this
 repository run the workflow (no pull_request trigger, no inputs), so a fork or a pull request never sees a secret.
 
@@ -56,15 +70,27 @@ this app. It is kept now because a new key means every phone must uninstall once
 progress. Moving to a real key is **a decision left for Marko**, and comes with a progress export first (a button that
 writes the players and progress to a file, and an import in the new app).
 
-## How a web change becomes a new APK (step by step)
+## When the app is rebuilt (rule of 22.11.2026)
 
-1. The web worker releases a new web version on MIND_GARDEN_WEB main with `VERSION` raised (whole number, e.g. 14).
-2. Here: put that commit's full sha into `web.lock`, raise `appVersion` in `gradle.properties` to the same number, commit, push to main.
-3. The workflow runs (Actions tab, "Android APK"): rules, fetch, version, files repo, sync, parity, upload test, sign,
-   unit tests, APK, APK checks, (a) keep, (b) upload, (c) the site says the new number. Green = done.
-4. Red at (b) or (c) after (a): re-run the workflow (Actions, "Re-run all jobs"); it finds the version kept and uploads
-   that file without rebuilding.
-5. Phones with the app see the question at their next start (online). A phone on v12 does not (see below).
+The app is rebuilt when a web release changes something the app shows, or when the shell changes. Its number is then the
+web version it is built from. Web and app may differ by a number in between (web 15 changed only a tile underline and an
+admin table, which the app does not show, so the app stayed 14). `web.lock` and the floor `appVersion` move at that next build.
+
+## How a web release becomes an APK (step by step, for a fresh worker)
+
+1. Read the web repo's release: `git -C ~/Developer/MIND_GARDEN_WEB log origin/main`, its `VERSION` (say N) and what changed in
+   `public/`. Nothing the app shows changed and no shell change: stop, no build.
+2. Here, on main: write that commit's full 40-character sha into `web.lock`; set `appVersion=N` in `gradle.properties`.
+3. Commit and push to main (a push that changes only `.md` files does not run the build).
+4. The workflow "Android APK" runs: rules, fetch the web at web.lock (read-only key), version, files repo check, copy the game,
+   parity, upload stand-in test, sign, unit tests, release + debug APK, APK checks (certificate, version, INTERNET only, not
+   debuggable, game hash = web commit), (a) keep in the files repo, (b) signed upload to the site, (c) the site's
+   /app/version.json says N. Green = done. Link and colour go to Marko.
+5. Red after (a): re-run it (`gh run rerun <id> -R markoboskoauroville/MIND_GARDEN_ANDROID`): it finds vN kept from the same web
+   commit and uploads that file without rebuilding. A re-run after success stays green (the live version again is a no-op).
+6. Proof on the emulator (`-no-audio`, own port): the debug variant from the files repo `test/` for `node tests/device/run.js`,
+   the release over the previous version for the update path. Update the version table below.
+7. A released number is never reused: a build of another web commit under a kept number is refused; raise the number.
 
 ## The upload rule (the site's lib/app.js and tools/app_sign.py; `scripts/upload_apk.py` sends the same bytes)
 
@@ -77,6 +103,24 @@ one (409), a chunk too big (413), a finish that does not match (422), and answer
 answer: key text `0123456789abcdef` four times, path `/app/upload/14/0`, timestamp `1763800000000`, body `hello` →
 `29d7eb2262d95603dc5746da664b18b46e5637da130f267d74982f2ec33e247f` (openssl). `scripts/test_upload.py` checks all of it,
 and a word-for-word copy of the web's `signed_post`, against a local stand-in in every run.
+
+## Closing proof of v14 (22.11.2026)
+
+Built by run 45004381044 from web d24f948; kept in the files repo; uploaded in 33 signed chunks; the site's
+/app/version.json answers {"version":14,"date":"2026-11-22"}. The web worker computed the sha256 from production's own
+stored chunks: `4abae99f514cd58d0f9bf39509012f54d99d1fbd32b961f17ea41816e15e1e71` over 33,979,669 bytes, the same as the
+built APK, and the real file came back byte-identical through the preview's /app/download as `MindGarden-v14.apk`.
+On the emulator the release installed over v12 and kept the player Emina and her progress.
+
+## Steps for Marko's own phone (one action each)
+
+1. On the phone, open https://mindgarden.markobosko.org/app in Chrome and sign in with an invited Google account.
+2. Tap the Download tile.
+3. Open the downloaded file; if Android asks, allow Chrome to install apps.
+4. Tap Update (it installs over v12; do not uninstall first).
+5. If Play Protect warns, tap "More details", then "Install anyway".
+6. Open Mind Garden and check that the players and their progress are there.
+7. Tell what Play Protect showed, if anything.
 
 ## The files repo (store of record)
 
@@ -94,7 +138,7 @@ for the on-device test runner and the emulator proofs. It is never uploaded to t
 
 ## What is in the app, what is not, and why
 
-In the app (offline): the whole game, the six-language row and the motto, players and progress on the phone, the
+In the app (offline): the whole game, the six-language row, players and progress on the phone, the
 recorded clips of all six languages, the phone's own voice for "Welcome, name", the back button, the confirm dialogs.
 Not in the app: Google sign-in, Global scores, progress saved with the login, the online voices, the donation bowl,
 install-from-browser, the web's service worker. Why: they need the server and the login; the app is the offline game.
@@ -102,8 +146,8 @@ The tile "More online: scores and voices" (from the web source, app mode only) o
 
 ## v12 phones
 
-v12 reads a `latest.json` pointer on an open Google Drive folder. That pointer is NOT pointed at the new APK (it would
-publish it). v12 phones learn of v13 from Marko, or from one last notice-only v12-style build (master's decision).
+v12 reads a `latest.json` pointer on an open Google Drive folder. That pointer is left alone (pointing it at the new APK
+would publish it). Decided 22.11.2026: Marko tells the few v12 users himself; no notice-only build.
 
 ## No downgrades (what v12 did, each pinned in `scripts/check_rules.py`)
 
@@ -118,6 +162,9 @@ design: the self-installing updater (replaced by "open the download page"), the 
   without it plays on Marko's speakers; on 22.11.2026 a chime (Play Protect's dialog) disturbed him while he listened to music.
   Sound is proven from the player's state (the audio element's currentTime advancing to its duration, audio focus held by
   app.mindgarden in `dumpsys audio`), never by raising a volume.
+- The device test runner lives here: `node tests/device/run.js --serial emulator-<port> --label <name> --apk <files repo>/test/mindgarden-v<N>-debug.apk --quick --force`
+  (copied from kognius_app and updated 22.11.2026 for the language row and the version label in the hero card; 27 of 27 on v14 debug, the 28th test exists only with --keep; a practice
+  round is always 10 questions). It installs the APK and clears its data unless `--keep`.
 - Use your own port and pass `-s <serial>` to every adb command; DevTools pages are picked by package. Never attach to
   another job's emulator or WebView.
 - Proofs need the debug variant (`test/mindgarden-v<N>-debug.apk`) for DevTools; the release is checked by screenshots,
@@ -133,5 +180,6 @@ warning for sure.
 
 ## Next
 
-- The site's upload route, `/app`, `/app/download`, `/app/version.json` (web worker); then the variable UPLOAD_LIVE = 1.
-- A progress export, before any change of the signing key (Marko's decision).
+- Marko installs v14 on his own phone (steps above) and reports what Play Protect showed.
+- The next build only when a web release changes something the app shows, or the shell changes (rule above).
+- A progress export, before any change of the signing key (Marko's decision for later; the key stays as it is).
