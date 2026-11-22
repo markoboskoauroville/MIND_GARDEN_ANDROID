@@ -87,7 +87,7 @@ are removed with a history rewrite **only when Marko asks**, never automatically
 | Version | Web commit | APK size | Date |
 |---|---|---|---|
 | 13 | 674df7a | 33,977,969 bytes | 22.11.2026 (test build: debuggable WebView, never uploaded to the site) |
-| 14 | d24f948 | (see the run summary) | 22.11.2026 |
+| 14 | d24f948 | 33,979,669 bytes, sha256 4abae99f...1e71 | 22.11.2026 (live on the site) |
 
 `test/mindgarden-v<N>-debug.apk` beside each release: the debug variant (same code, same certificate, WebView debuggable)
 for the on-device test runner and the emulator proofs. It is never uploaded to the site and never given to anybody.

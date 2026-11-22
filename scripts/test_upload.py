@@ -100,18 +100,19 @@ def main():
     bad = {'chunks': 1, 'size': 3, 'sha256': hashlib.sha256(b'abd').hexdigest(), 'date': '2026-11-22', 'web_commit': 'a' * 40}
     s, _ = upload_apk.post(site, '/app/upload/15/finish', json.dumps(bad).encode(), KEY, 'application/octet-stream')
     expect('a finish whose sha256 does not match the chunks is refused (422) and v14 stays live', s == 422 and STORE['live'] == 14)
+    expect('the same version again is a no-op (a re-run after success stays green)', upload_apk.upload(site, data, meta, KEY) == 0)
     try:
-        upload_apk.upload(site, data, meta, KEY)
-        expect('the client stops by itself when the version is not higher', False)
+        upload_apk.upload(site, data, dict(meta, version=13), KEY)
+        expect('the client stops by itself when the version is lower than the live one', False)
     except SystemExit as e:
-        expect('the client stops by itself when the version is not higher', 'not higher' in str(e))
+        expect('the client stops by itself when the version is lower than the live one', 'lower' in str(e))
     k, p, t, b = '0123456789abcdef' * 4, '/app/upload/14/0', '1763800000000', b'hello'
     mine = upload_apk.sign(k, p, t, b)
     expect('the same bytes as the web recipe (tools/app_sign.py)', mine == web_recipe_sig(k, p, t, b))
     expect('known answer computed with openssl', mine == KNOWN)
     expect('a real User-Agent is sent', 'urllib' not in upload_apk.UA.lower())
     srv.shutdown()
-    total = 10
+    total = 11
     print(f'upload rule: {total - len(fails)} of {total} checks pass')
     sys.exit(1 if fails else 0)
 

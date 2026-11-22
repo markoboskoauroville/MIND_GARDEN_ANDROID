@@ -49,8 +49,11 @@ def upload(site, apk_bytes, meta, key, now=time.time, check_served=True):
     v = int(meta['version'])
     if check_served:
         cur = served_version(site)
-        if v <= cur:
-            raise SystemExit(f'::error::v{v} is not higher than the live v{cur}: nothing uploaded (never backwards)')
+        if v == cur:
+            print(f'v{v} is already the live version: nothing to upload')
+            return 0
+        if v < cur:
+            raise SystemExit(f'::error::v{v} is lower than the live v{cur}: nothing uploaded (never backwards)')
     parts = [apk_bytes[i:i + CHUNK] for i in range(0, len(apk_bytes), CHUNK)]
     for i, part in enumerate(parts):
         for attempt in range(3):
